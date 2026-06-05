@@ -1,0 +1,14 @@
+# Excluir configuraciones de Netlify
+.netlify/
+
+# Excluir documentos de planeamiento internos y archivos Excel de oportunidades
+Informe_Presencia_Digital_Internacional_2026.docx
+Oportunidades_Internacionales_2026 (1).xlsx
+Oportunidades_Internacionales_ACTUALIZADO_Mayo2026 (2).xlsx
+contexto_chatbot_internacional.json
+prompt_detallado_pestanas.txt
+respaldo internacuional/
+
+# Excluir borradores o archivos HTML de desarrollo
+rony pora rreglar.html
+HAZANAL PO R MEJORA PARA LEMJUGA INTERNACIONAL.html

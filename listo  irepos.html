@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="es"><head><script data-od-sandbox-shim="">(function(){
+  function makeStore(){
+    var data = {};
+    var api = {
+      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v){ data[k] = String(v); },
+      removeItem: function(k){ delete data[k]; },
+      clear: function(){ data = {}; },
+      key: function(i){ return Object.keys(data)[i] || null; }
+    };
+    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
+    return api;
+  }
+  function tryShim(name){
+    var works = false;
+    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
+    catch (_) { works = false; }
+    if (works) return;
+    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
+    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
+  }
+  tryShim('localStorage');
+  tryShim('sessionStorage');
+  document.addEventListener('click', (e) => {
+    if (!e.target || !(e.target instanceof Element)) return;
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (href === null) return;
+    var isAnchor = href.startsWith('#') || href === '';
+    if (isAnchor) {
+      e.preventDefault();
+      if (href === '' || href === '#') {
+        window.scrollTo({ top: 0 });
+        history.replaceState(null, '', ' ');
+      } else {
+        var targetId = href.slice(1);
+        var target = targetId ? document.getElementById(targetId) : null;
+        if (target) {
+          target.scrollIntoView();
+          location.hash === href && history.replaceState(null, '', ' ');
+          location.hash = href;
+        }
+      }
+    } else if (link.getAttribute('target') === '_blank') {
+      e.preventDefault();
+      let safe = false;
+      try {
+        var url = new URL(href, location.href);
+        safe =
+          url.protocol === 'http:' ||
+          url.protocol === 'https:' ||
+          url.protocol === 'mailto:';
+      } catch (_) {}
+      safe && window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  });
+})();</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Libro de Hazañas Tecnológicas - Rony Valverde</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #020204;
+      --surface: rgba(10, 15, 25, 0.6);
+      --surface-solid: rgba(8, 12, 20, 0.85);
+      --text: #ffffff;
+      --text-muted: #a0a0a8;
+      
+      /* Nuevo Azul Marino Brillante */
+      --accent-blue: #0088ff; 
+      --accent-blue-glow: rgba(0, 136, 255, 0.3);
+      
+      --accent-green: #00ff66;
+      --accent-green-glow: rgba(0, 255, 102, 0.3);
+      
+      --accent-danger: #ff0055;
+      
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body, html {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-display);
+      overflow-x: hidden;
+      /* Ocultar barra de scroll nativa para mayor inmersión */
+      -ms-overflow-style: none;  
+      scrollbar-width: none;  
+    }
+    body::-webkit-scrollbar { display: none; }
+
+    .scroll-track { height: 700vh; width: 100%; }
+
+    .viewport {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      overflow: hidden; perspective: 1000px;
+    }
+
+    #webgl-canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 1; pointer-events: none;
+    }
+
+    .grain {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 50; pointer-events: none; opacity: 0.06;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    }
+
+    nav {
+      position: fixed; top: 0; left: 0; width: 100%; padding: 40px 60px;
+      display: flex; justify-content: space-between; align-items: center; z-index: 100;
+      pointer-events: none;
+    }
+    .logo { display: flex; flex-direction: column; pointer-events: auto; }
+    .logo-name { font-weight: 800; letter-spacing: 2px; font-size: 1.5vw; color: var(--text); line-height: 1.2; text-transform: uppercase; }
+    .logo-title { font-family: var(--font-mono); font-size: 0.8vw; color: var(--accent-blue); letter-spacing: 1px; }
+    .nav-indicator { font-family: var(--font-mono); font-size: 1vw; color: var(--accent-blue); pointer-events: auto; }
+
+    .slide {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 0 8vw; z-index: 10; visibility: hidden; pointer-events: none;
+    }
+    .slide.active-slide { pointer-events: auto; }
+
+    .tag { font-family: var(--font-mono); color: var(--accent-blue); font-size: 1vw; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 2vh; }
+    
+    h1 { font-size: 5.5vw; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; margin-bottom: 2vh; max-width: 90vw; }
+    h2 { font-size: 4.5vw; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 3vh; max-width: 85vw; }
+    
+    p.body-text { font-size: 1.5vw; color: var(--text-muted); max-width: 65vw; line-height: 1.6; }
+    p.mono-subtitle { color: var(--accent-blue); font-family: var(--font-mono); font-size: 1.2vw; margin-bottom: 5vh; letter-spacing: 1px; text-transform: uppercase; }
+
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2vw; margin-top: 4vh; max-width: 85vw; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vw; margin-top: 4vh; max-width: 85vw; }
+    
+    /* Make slide 3 grid scrollable or responsive inside viewport */
+    #slide-3 .grid-3 {
+      max-height: 55vh;
+      overflow-y: auto;
+      padding-right: 1vw;
+      /* Custom thin scrollbar for slide 3 grid */
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent-blue) transparent;
+    }
+    #slide-3 .grid-3::-webkit-scrollbar {
+      width: 4px;
+    }
+    #slide-3 .grid-3::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #slide-3 .grid-3::-webkit-scrollbar-thumb {
+      background: var(--accent-blue);
+      border-radius: 2px;
+    }
+    
+    /* =========================================
+       TARJETAS INTERACTIVAS (GLASSMORPHISM)
+       ========================================= */
+    .interactive-card {
+      background: var(--surface);
+      border: 1px solid rgba(0, 136, 255, 0.2); padding: 2.5vw; border-radius: 12px;
+      cursor: pointer; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative; overflow: hidden;
+    }
+    
+    /* Brillo interno dinámico */
+    .interactive-card::before {
+      content: ""; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+      background: linear-gradient(to right, transparent, rgba(0, 136, 255, 0.15), transparent);
+      transform: skewX(-25deg); transition: all 0.6s ease;
+    }
+    
+    /* Cajón de "EXPLORAR" al hacer hover */
+    .interactive-card::after {
+      content: "EXPLORAR +"; position: absolute; bottom: 0; left: 0; width: 100%;
+      background: var(--accent-blue); color: #000; font-family: var(--font-mono);
+      font-size: 0.8vw; text-align: center; padding: 10px 0; transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); letter-spacing: 2px; font-weight: bold;
+    }
+    
+    .interactive-card:hover { 
+      border-color: var(--accent-blue); 
+      transform: translateY(-8px); 
+      box-shadow: 0 12px 40px var(--accent-blue-glow); 
+    }
+    .interactive-card:hover::before { left: 200%; }
+    .interactive-card:hover::after { transform: translateY(0); }
+    
+    /* Variante Verde */
+    .interactive-card.green { border-color: rgba(0, 255, 102, 0.2); }
+    .interactive-card.green::before { background: linear-gradient(to right, transparent, rgba(0, 255, 102, 0.15), transparent); }
+    .interactive-card.green:hover { border-color: var(--accent-green); box-shadow: 0 12px 40px var(--accent-green-glow); }
+    .interactive-card.green::after { background: var(--accent-green); color: #000; }
+
+    /* Variante Oscura (Para tecnologías) */
+    .interactive-card.dark { background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); }
+    .interactive-card.dark:hover { border-color: var(--accent-blue); box-shadow: 0 12px 40px var(--accent-blue-glow); }
+
+    /* Textos dentro de tarjetas */
+    .interactive-card h3 { font-family: var(--font-mono); font-size: 1vw; margin-bottom: 1vh; text-transform: uppercase; letter-spacing: 1px; color: #fff;}
+    .interactive-card p.metric { font-size: 3vw; font-family: var(--font-mono); color: var(--accent-blue); font-weight: 300; }
+    .interactive-card.green p.metric { color: var(--accent-green); }
+    .interactive-card p.desc { font-size: 0.9vw; color: var(--text-muted); margin-top: 1vh; line-height: 1.4; }
+
+    /* Indicador de scroll inicial */
+    .scroll-down { position: absolute; bottom: 4vh; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 1vh; pointer-events: none; }
+    .scroll-line { width: 1px; height: 6vh; background: linear-gradient(to bottom, var(--accent-blue), transparent); animation: drop 2s infinite; }
+    @keyframes drop { 0% { transform: scaleY(0); transform-origin: top; } 50% { transform: scaleY(1); transform-origin: top; } 50.1% { transform: scaleY(1); transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
+
+    /* =========================================
+       SISTEMA DE MODALES (VENTANAS EMERGENTES)
+       ========================================= */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.1); backdrop-filter: blur(20px);
+      z-index: 200; display: flex; justify-content: center; align-items: center;
+      opacity: 0; visibility: hidden; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .modal-overlay.active { opacity: 1; visibility: visible; }
+    
+    .modal-content {
+      background: var(--surface-solid); 
+      border: 1px solid rgba(0, 136, 255, 0.3);
+      box-shadow: 0 0 80px rgba(0, 136, 255, 0.1);
+      width: 50vw; max-height: 80vh; border-radius: 16px; padding: 4vw;
+      position: relative; overflow-y: auto;
+      transform: scale(0.95) translateY(30px); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .modal-overlay.active .modal-content { transform: scale(1) translateY(0); }
+    
+    .modal-close {
+      position: absolute; top: 2vw; right: 2vw; background: transparent;
+      border: 1px solid var(--text-muted); color: var(--text); width: 40px; height: 40px;
+      border-radius: 50%; font-size: 20px; cursor: pointer; transition: all 0.2s;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .modal-close:hover { background: var(--accent-blue); color: #000; border-color: var(--accent-blue); transform: rotate(90deg); }
+
+    .modal-title { font-size: 2.5vw; margin-bottom: 2vh; color: var(--accent-blue); letter-spacing: -0.02em; }
+    .modal-body { font-size: 1.1vw; color: var(--text-muted); line-height: 1.6; }
+    .modal-body ul { list-style: none; margin-top: 2vh; padding-left: 0; }
+    
+    /* Animación mágica en listas de modales */
+    .modal-body li { 
+      margin-bottom: 1.5vh; 
+      padding-left: 20px; 
+      position: relative; 
+      opacity: 0; 
+      transform: translateX(-20px); 
+    }
+    .modal-body li::before { 
+      content: "▹"; position: absolute; left: 0; color: var(--accent-blue); font-family: var(--font-mono); 
+    }
+    .modal-body strong { color: #fff; font-weight: 600; }
+
+    /* Estilos Especiales Agentes */
+    .agent-corpus { border-color: rgba(255, 0, 85, 0.3) !important; background: rgba(255, 0, 85, 0.05) !important; }
+    .agent-corpus::after { background: var(--accent-danger) !important; color: #fff !important; }
+    .agent-corpus:hover { box-shadow: 0 12px 40px rgba(255, 0, 85, 0.3) !important; border-color: var(--accent-danger) !important; }
+    .agent-corpus h3 { color: var(--accent-danger) !important; }
+
+
+
+  </style>
+<style data-od-tweaks-bridge-style="">
+[data-od-tweaks-hidden] .tw-panel {
+  transform: translateX(calc(100% + 32px)) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.tw-restore { display: none !important; }
+</style><script data-od-tweaks-bridge="">(function(){
+  // Synchronously hide BEFORE the artifact body parses so the panel never
+  // flashes on initial paint. The host removes the attribute via postMessage
+  // once it knows the desired state.
+  document.documentElement.setAttribute('data-od-tweaks-hidden', '');
+
+  var suppressEcho = false;
+  var observer = null;
+
+  function panelEl(){ return document.querySelector('.tw-panel'); }
+
+  function applyClassesToPanel(visible){
+    var panel = panelEl();
+    if (panel) panel.classList.toggle('tw-hidden', !visible);
+  }
+
+  function setPanelVisible(visible){
+    suppressEcho = true;
+    document.documentElement.toggleAttribute('data-od-tweaks-hidden', !visible);
+    applyClassesToPanel(visible);
+    // Clear flag after the MutationObserver has had a chance to fire for this
+    // change so we don't echo our own host-driven toggles back to the host.
+    Promise.resolve().then(function(){ suppressEcho = false; });
+  }
+
+  function postState(){
+    var panel = panelEl();
+    if (!panel) return;
+    try {
+      parent.postMessage({
+        type: 'od:tweaks-panel-state',
+        visible: !panel.classList.contains('tw-hidden'),
+      }, '*');
+    } catch (e) {}
+  }
+
+  function postAvailability(){
+    try {
+      parent.postMessage({
+        type: 'od:tweaks-available',
+        available: !!panelEl(),
+      }, '*');
+    } catch (e) {}
+  }
+
+  function attachObserver(){
+    var panel = panelEl();
+    if (!panel || observer) return;
+    observer = new MutationObserver(function(){
+      if (suppressEcho) return;
+      postState();
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function onReady(){
+    // Capture the panel authored visibility BEFORE we apply the host hidden
+    // attribute. The bridge sets data-od-tweaks-hidden synchronously in head
+    // (before the body parses), so on entry to onReady the attribute is
+    // always present even though the artifact may have authored the panel
+    // as default-visible. Reading the panel class first is the only place
+    // we can still observe the author intent. Then drive the attribute,
+    // classes, and posted state from that captured value so a default
+    // visible tw-panel reports visible:true and the toolbar toggle starts
+    // ON. Issue surfaced in PR #1643 review.
+    var panel = panelEl();
+    var initialVisible = !!panel && !panel.classList.contains('tw-hidden');
+    document.documentElement.toggleAttribute('data-od-tweaks-hidden', !initialVisible);
+    applyClassesToPanel(initialVisible);
+    attachObserver();
+    postAvailability();
+    // Post the captured initial visibility so the toolbar toggle reflects
+    // the default state on mount. Without this the toggle reads OFF while
+    // a default-visible tw-panel artifact clearly shows its panel and the
+    // user would have to click toggle-on then toggle-off to actually hide.
+    postState();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onReady);
+  } else {
+    onReady();
+  }
+
+  window.addEventListener('message', function(ev){
+    if (!ev.data || ev.data.type !== 'od:tweaks-panel-visible') return;
+    setPanelVisible(!!ev.data.visible);
+  });
+})();</script></head>
+<body>
+
+  <!-- MODAL GLOBAL -->
+  <div class="modal-overlay" id="global-modal" onclick="closeOnOverlay(event)" data-od-id="path-0">
+    <div class="modal-content" id="modal-box" data-od-id="path-0-0">
+      <button class="modal-close" onclick="closeModal()" data-od-id="path-0-0-0">×</button>
+      <h2 class="modal-title" id="modal-title" data-od-id="path-0-0-1">Título</h2>
+      <div class="modal-body" id="modal-body" data-od-id="path-0-0-2">Contenido...</div>
+    </div>
+  </div>
+
+  <nav data-od-id="path-1">
+    <div class="logo" data-od-id="path-1-0">
+      <span class="logo-name">RONY VALVERDE</span>
+      <span class="logo-title">CEO DE PISTON QUARKS</span>
+    </div>
+    <div class="nav-indicator" id="progress-text" data-od-id="path-1-1">01 / 06</div>
+  </nav>
+
+  <div class="scroll-track" data-od-id="path-2"></div>
+
+  <div class="viewport" data-od-id="path-3">
+    <canvas id="webgl-canvas" data-od-id="path-3-0"></canvas>
+    <div class="grain"></div>
+
+    <!-- ESCENA 1: HERO -->
+    <section class="slide active-slide" id="slide-1" style="visibility: visible;" data-od-id="path-3-2">
+      <div class="tag" data-od-id="path-3-2-0">Registro Maestro · NEXUS WAN</div>
+      <h1 data-od-id="path-3-2-1">Hazañas Tecnológicas y de Innovación</h1>
+      <p class="mono-subtitle">SOVEREIGN INTELLIGENCE ARCHITECT</p>
+      
+      <div class="grid-4" data-od-id="path-3-2-3">
+        <div class="interactive-card" onclick="openModal('hazanas')">
+          <h3 data-od-id="path-3-2-3-0-0">Hazañas</h3>
+          <p class="metric">40+</p>
+          <p class="desc">Proyectos de ingeniería documentados y desplegados.</p>
+        </div>
+        <div class="interactive-card" onclick="openModal('ramas')">
+          <h3 data-od-id="path-3-2-3-1-0">Especialidades</h3>
+          <p class="metric">12</p>
+          <p class="desc">Ramas de tecnología e ingeniería dominadas.</p>
+        </div>
+        <div class="interactive-card" onclick="openModal('agentes')">
+          <h3 data-od-id="path-3-2-3-2-0">NEXUS WAN</h3>
+          <p class="metric">8</p>
+          <p class="desc">Agentes en ecosistema orquestado y autónomo.</p>
+        </div>
+        <div class="interactive-card green" onclick="openModal('costo')">
+          <h3 style="color: var(--accent-green);" data-od-id="path-3-2-3-3-0">Inversión</h3>
+          <p class="metric">Custom</p>
+          <p class="desc">Variable según el nivel del producto B2B.</p>
+        </div>
+      </div>
+
+      <div class="scroll-down" data-od-id="path-3-2-4">
+        <span style="font-family: var(--font-mono); font-size: 0.8vw; color: var(--accent-blue); letter-spacing: 2px;">INICIAR RECORRIDO SCROLL</span>
+        <div class="scroll-line"></div>
+      </div>
+    </section>
+
+    <!-- ESCENA 2: EXPLICACIÓN TECNOLÓGICA (AHORA INTERACTIVA) -->
+    <section class="slide" id="slide-2" data-od-id="path-3-3">
+      <div class="tag" data-od-id="path-3-3-0">01 / Arquitectura Cinematográfica</div>
+      <h2 data-od-id="path-3-3-1">No es una web. Es un Motor Narrativo.</h2>
+      <p class="body-text">Este sistema no desplaza la página convencionalmente. Controlas una línea de tiempo renderizada en tiempo real. <strong>Valor estimado del motor core: $15,000 USD.</strong></p>
+      
+      <div class="grid-3" data-od-id="path-3-3-3">
+        <div class="interactive-card dark" onclick="openModal('threejs')">
+          <h3 data-od-id="path-3-3-3-0-0">Three.js / WebGL</h3>
+          <p class="desc">Renderizado acelerado por GPU. Cientos de partículas calculando física espacial al vuelo.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('gsap')">
+          <h3 data-od-id="path-3-3-3-1-0">GSAP ScrollTrigger</h3>
+          <p class="desc">Motor hollywoodense que convierte la rueda del ratón en un director de cámara 3D inmersivo.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('react')">
+          <h3 data-od-id="path-3-3-3-2-0">React &amp; Estructura V-DOM</h3>
+          <p class="desc">Transiciones de estado hiper-rápidas a 144 cuadros por segundo sin latencia.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESCENA 3: RAMAS DE INGENIERÍA -->
+    <section class="slide" id="slide-3" data-od-id="path-3-4">
+      <div class="tag" data-od-id="path-3-4-0">02 / Dominio Técnico</div>
+      <h2 data-od-id="path-3-4-1">Las 12 Especialidades de Ingeniería.</h2>
+      <p class="body-text">Un stack profundo y transversal: Python, Next.js, Electron, SQLite, IA Local, WebAssembly, WebGL y Arquitectura Hexagonal.</p>
+      
+      <div class="grid-3" data-od-id="path-3-4-3">
+        <div class="interactive-card dark" onclick="openModal('sovereign_architect')">
+          <h3 data-od-id="path-3-4-3-0-0">Sovereign Intelligence Architect</h3>
+          <p class="desc">Diseño de arquitecturas cognitivas soberanas y seguridad PQC.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('software_architect')">
+          <h3 data-od-id="path-3-4-3-1-0">Principal Software Architect</h3>
+          <p class="desc">Arquitectura Hexagonal, Domain-Driven Design y microservicios.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('ai_ml_engineer')">
+          <h3 data-od-id="path-3-4-3-2-0">AI/ML Systems Engineer</h3>
+          <p class="desc">Ollama, GGUF, ComfyUI, RAG, y sistemas de IA locales.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('devops_engineer')">
+          <h3 data-od-id="path-3-4-3-3-0">DevOps &amp; Infrastructure Engineer</h3>
+          <p class="desc">NEXUS WAN (n8n), Docker, CI/CD y automatización de procesos.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('mobile_engineer')">
+          <h3 data-od-id="path-3-4-3-4-0">Mobile Native Engineer</h3>
+          <p class="desc">Desarrollo de Apps Nativas (Android, Capacitor, Gradle).</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('desktop_engineer')">
+          <h3 data-od-id="path-3-4-3-5-0">Desktop Engineering (Native)</h3>
+          <p class="desc">Electron, PyWebView y aplicaciones de escritorio de alto rendimiento.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('security_engineer')">
+          <h3 data-od-id="path-3-4-3-6-0">Security &amp; Cryptography Engineer</h3>
+          <p class="desc">Seguridad PQC, MCP y defensa contra ataques de Directory Traversal.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('data_engineer')">
+          <h3 data-od-id="path-3-4-3-7-0">Data Engineering &amp; Persistence</h3>
+          <p class="desc">SQLite/WAL, FAISS, Obsidian y Checkpointing Durable.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('real_time_engineer')">
+          <h3 data-od-id="path-3-4-3-8-0">Real-Time Systems Engineer</h3>
+          <p class="desc">WebSockets, IPC/Socket y sistemas de control industrial (IoT).</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('video_engineer')">
+          <h3 data-od-id="path-3-4-3-9-0">Video &amp; Multimedia Engineer</h3>
+          <p class="desc">Remotion, ComfyUI, FFT Audio y WebAssembly para multimedia.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('frontend_engineer')">
+          <h3 data-od-id="path-3-4-3-10-0">Frontend Engineering (Elite)</h3>
+          <p class="desc">React 19, Next.js, Tailwind v4, WebGL/Three.js.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('compiler_engineer')">
+          <h3 data-od-id="path-3-4-3-11-0">Compiler &amp; Build Engineering</h3>
+          <p class="desc">PyInstaller, Gradle, Aquis y optimización de builds.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESCENA 4: ECOSISTEMA AGENTES (NEXUS WAN Y CORPUS) -->
+    <section class="slide" id="slide-4" data-od-id="path-3-5">
+      <div class="tag" data-od-id="path-3-5-0">03 / Ecosistema Agéntico</div>
+      <h2 data-od-id="path-3-5-1">NEXUS WAN &amp; Sistema Corpus.</h2>
+      <p class="body-text">Arquitectura orquestada de agentes autónomos especializados. Sistemas que programan sistemas, auditan código y controlan hardware local.</p>
+      
+      <div class="grid-4" style="gap: 16px;" data-od-id="path-3-5-3">
+        <div class="interactive-card dark" onclick="openModal('sovereign_architect')">
+          <h3 data-od-id="path-3-5-3-0-0">Arquitecto Principal</h3>
+          <p class="desc">Diseño de sistemas, patrones Hexagonales y PQC.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('data_engineer')">
+          <h3 data-od-id="path-3-5-3-1-0">Agente de Memoria</h3>
+          <p class="desc">Semántica, retención de contexto a largo plazo.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('agentes')">
+          <h3 data-od-id="path-3-5-3-2-0">Orquestador Swarm</h3>
+          <p class="desc">Enjambre agéntico y búsqueda de protocolos MCP.</p>
+        </div>
+        <div class="interactive-card agent-corpus" onclick="openModal('corpus')">
+          <h3 data-od-id="path-3-5-3-3-0">Corpus (Sistema ISIS)</h3>
+          <p class="desc">HMI &amp; Control Agent. Inferencia local, VOZ y hardware.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESCENA 5: HAZAÑAS L5 -->
+    <section class="slide" id="slide-5" data-od-id="path-3-6">
+      <div class="tag" data-od-id="path-3-6-0">04 / L5 SOVEREIGN ENGINEER</div>
+      <h2 data-od-id="path-3-6-1">Post-Quantum Cryptography & Local AI</h2>
+      <p class="mono-subtitle">LEVEL 5 — HIGH-SECURITY COGNITIVE INFRASTRUCTURE</p>
+      
+      <div class="grid-3" data-od-id="path-3-6-3">
+        <div class="interactive-card dark" onclick="openModal('pqc_banca')">
+          <h3 style="color: var(--accent-blue);">Post-Quantum Cryptography (PQC)</h3>
+          <p class="desc">Securing sensitive transactions with NIST FIPS 203 standards (ML-KEM/Kyber & ML-DSA). Implemented inside Java 17 / NestJS auth layers.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('sovereign_ai')">
+          <h3 style="color: var(--accent-blue);">Sovereign Local AI Cognition</h3>
+          <p class="desc">Zero-Cloud local LLM deployment (DeepSeek-R1 / Llama-3) on-premise. Decouples client data from external APIs, reducing OPEX to $0.00.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('telemetry_durable')">
+          <h3 style="color: var(--accent-blue);">Critical Telemetry & Durable State</h3>
+          <p class="desc">SQLite WAL and local persistence preventing data loss during fiber cuts or outages. Atomic synchronization on link recovery.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESCENA 6: HAZAÑAS L4 -->
+    <section class="slide" id="slide-6" data-od-id="path-3-7">
+      <div class="tag" data-od-id="path-3-7-0">05 / L4 CORE DEPLOYMENTS</div>
+      <h2 data-od-id="path-3-7-1">Agentic Autonomic Compiling & Logistics Nodes</h2>
+      <p class="mono-subtitle">LEVEL 4 — DEV COMPILERS & REAL-TIME DISTRIBUTED SYSTEMS</p>
+      
+      <div class="grid-3" data-od-id="path-3-7-3">
+        <div class="interactive-card dark" onclick="openModal('app_kiss')">
+          <h3 style="color: var(--accent-blue);">App Kiss Self-Healing Compiler</h3>
+          <p class="desc">Autonomic compiler diagnosing Android SDK/Capacitor build logs. Patches syntax & dependency issues on the fly via local AI.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('repoguide_rag')">
+          <h3 style="color: var(--accent-blue);">RepoGuide RAG Security Proxy</h3>
+          <p class="desc">Next.js API proxy gateway and FAISS database to analyze million-line legacy repositories locally without leaks.</p>
+        </div>
+        <div class="interactive-card dark" onclick="openModal('flashcoms_logistics')">
+          <h3 style="color: var(--accent-blue);">FlashComs Real-Time Logistics</h3>
+          <p class="desc">Decoupled georeferential route tracking at 144 FPS using Leaflet.js and WebSockets. Saved S/ 35,400 in API license costs.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // --- CONTENIDO DE LOS MODALES ---
+    const modales = {
+      hazanas: {
+        titulo: "40+ Hazañas de Ingeniería",
+        contenido: `<p>Registro histórico oficial y ordenado de los despliegues más complejos y críticos desarrollados por Rony Valverde.</p>
+                    <ul>
+                      <li><strong>Nivel L5 (Sovereign):</strong> Infraestructura cognitiva local y Zero-Trust.</li>
+                      <li><strong>Nivel L4 (Architect):</strong> Compiladores autocurativos y Enjambres.</li>
+                      <li><strong>Nivel L3 (Principal):</strong> Sistemas distribuidos.</li>
+                      <li><strong>Sectores:</strong> Minería, Logística, Robótica, Control Industrial (IoT) y Software Empresarial.</li>
+                    </ul>`
+      },
+      ramas: {
+        titulo: "12 Especialidades Dominadas",
+        contenido: `<p>Dominio empírico "Full-Stack + AI + Hardware". Capacidad para construir el producto completo de extremo a extremo.</p>
+                    <ul>
+                      <li>Arquitectura de Software (Hexagonal, DDD).</li>
+                      <li>Desarrollo Nativo Móvil y Escritorio (C, Python, Android).</li>
+                      <li>Seguridad y Criptografía.</li>
+                      <li>Motores 3D y Experiencias WebGL (Frontend Elite).</li>
+                    </ul>`
+      },
+      agentes: {
+        titulo: "Ecosistema NEXUS WAN",
+        contenido: `<p>Una red de agentes especializados que colaboran para escribir código, orquestar memoria y auditar arquitectura.</p>
+                    <ul>
+                      <li><strong>Búsqueda Semántica (MCP):</strong> Reducción masiva del contexto tokenizado.</li>
+                      <li><strong>Delegación Dinámica:</strong> Asignación de tareas según el modelo LLM más óptimo (DeepSeek R1 para lógica, Qwen para código).</li>
+                      <li><strong>Soberanía Total:</strong> Todo procesado en local, sin enviar IP corporativa a OpenAI o Anthropic.</li>
+                    </ul>`
+      },
+      costo: {
+        titulo: "Inversión Tecnológica",
+        contenido: `<p>Los despliegues no se cobran como "páginas web", sino como ecosistemas que ahorran decenas de miles de dólares anuales a la empresa.</p>
+                    <ul>
+                      <li><strong>L1 - L2:</strong> Implementaciones tácticas y UIs ($80 - $180/hr).</li>
+                      <li><strong>L3 - L4:</strong> Sistemas Core, Enjambres y Compiladores ($180 - $400/hr).</li>
+                      <li><strong>L5 Sovereign:</strong> Infraestructuras que garantizan la supervivencia digital corporativa ($400 - $600/hr).</li>
+                    </ul>`
+      },
+      threejs: {
+        titulo: "Motor WebGL / Three.js",
+        contenido: `<p>Nuestra plataforma no utiliza videos de fondo pregrabados. Lo que ves está sucediendo en tiempo real.</p>
+                    <ul>
+                      <li><strong>Procesamiento en GPU:</strong> Liberamos la CPU del navegador para otras tareas críticas.</li>
+                      <li><strong>Geometría Espacial:</strong> Miles de vértices posicionados en coordenadas 3D (X, Y, Z) para efectos inmersivos.</li>
+                      <li><strong>Interactividad Física:</strong> El entorno reacciona al scroll como si navegaras por el espacio sideral, creando una experiencia cinematográfica.</li>
+                    </ul>`
+      },
+      gsap: {
+        titulo: "Director de Cámara (GSAP)",
+        contenido: `<p>Sincronización milimétrica entre la acción del usuario y la narrativa audiovisual.</p>
+                    <ul>
+                      <li><strong>ScrollTrigger:</strong> Ancla elementos del DOM a posiciones específicas de la rueda del mouse para activar animaciones.</li>
+                      <li><strong>Timeline Scrubbing:</strong> Permite avanzar y retroceder la animación con fluidez absoluta, controlando el ritmo narrativo.</li>
+                      <li><strong>Easing Cinematográfico:</strong> Aceleraciones y desaceleraciones matemáticas (CustomEase) que dan un toque profesional y suave.</li>
+                    </ul>`
+      },
+      react: {
+        titulo: "React / Virtual DOM",
+        contenido: `<p>Arquitectura subyacente diseñada para la inmediatez operativa y la creación de interfaces de usuario dinámicas.</p>
+                    <ul>
+                      <li><strong>Componentización:</strong> Módulos reutilizables que previenen cuellos de botella y facilitan el mantenimiento.</li>
+                      <li><strong>Reconciliación de Estado:</strong> Actualización de interfaces sin recargar la página (Single Page Application real).</li>
+                      <li><strong>Optimización SEO (Next.js):</strong> Todo el contenido es indexable por Google, a pesar de ser una experiencia inmersiva y rica en animaciones.</li>
+                    </ul>`
+      },
+      sovereign_architect: {
+        titulo: "Arquitecto de Inteligencia Soberana",
+        contenido: `<p>Diseña y construye infraestructuras de IA que operan de forma independiente y segura, sin depender de servicios externos. Especializado en criptografía post-cuántica (PQC) y arquitecturas Zero-Trust para máxima seguridad y control de datos. Garantiza que tu inteligencia digital sea tuya.</p>`
+      },
+      software_architect: {
+        titulo: "Arquitecto Principal de Software",
+        contenido: `<p>Lidera el diseño de sistemas de software complejos, utilizando metodologías avanzadas como la Arquitectura Hexagonal y Domain-Driven Design (DDD). Crea microservicios robustos y escalables, asegurando que tu software sea flexible, mantenible y adaptable a cualquier cambio.</p>`
+      },
+      ai_ml_engineer: {
+        titulo: "Ingeniero de Sistemas AI/ML",
+        contenido: `<p>Desarrolla e implementa soluciones de Inteligencia Artificial y Machine Learning. Utiliza herramientas como Ollama y ComfyUI para modelos GGUF, e implementa sistemas RAG (Retrieval-Augmented Generation) y FAISS para búsquedas y respuestas inteligentes. Convierte tus datos en decisiones estratégicas.</p>`
+      },
+      devops_engineer: {
+        titulo: "Ingeniero de DevOps e Infraestructura",
+        contenido: `<p>Optimiza tus operaciones de desarrollo y despliegue. Experto en automatización con NEXUS WAN (n8n), Docker para contenedores y prácticas CI/CD para entregas rápidas y fiables. Asegura que tu infraestructura sea eficiente, escalable y siempre disponible.</p>`
+      },
+      mobile_engineer: {
+        titulo: "Ingeniero Nativo Móvil",
+        contenido: `<p>Crea aplicaciones móviles de alto rendimiento para Android. Utiliza frameworks como Capacitor para desarrollo híbrido y gestiona builds con Gradle, garantizando una experiencia de usuario fluida y nativa en cualquier dispositivo móvil.</p>`
+      },
+      desktop_engineer: {
+        titulo: "Ingeniería de Escritorio (Nativa)",
+        contenido: `<p>Desarrolla aplicaciones de escritorio robustas y eficientes usando Electron y PyWebView. Permite que tus soluciones lleguen a cualquier plataforma (Windows, macOS, Linux) con una interfaz de usuario rica y un rendimiento excepcional.</p>`
+      },
+      security_engineer: {
+        titulo: "Ingeniero de Seguridad y Criptografía",
+        contenido: `<p>Protege tus sistemas contra amenazas cibernéticas con seguridad de última generación. Especializado en PQC (criptografía post-cuántica), seguridad MCP y técnicas avanzadas para prevenir ataques como Directory Traversal, blindando tu información más crítica.</p>`
+      },
+      data_engineer: {
+        titulo: "Ingeniería de Datos y Persistencia",
+        contenido: `<p>Gestiona y almacena tus datos de forma eficiente y segura. Utiliza sistemas como SQLite/WAL para bases de datos locales, FAISS para búsqueda vectorial rápida y Durable Checkpointing para asegurar la integridad y recuperación de la información en todo momento.</p>`
+      },
+      real_time_engineer: {
+        titulo: "Ingeniero de Sistemas en Tiempo Real",
+        contenido: `<p>Diseña y optimiza sistemas que requieren respuestas inmediatas. Implementa soluciones con WebSockets para comunicación instantánea, IPC/Socket para procesos interconectados y protocolos IoT para control industrial, garantizando operaciones sin demoras.</p>`
+      },
+      video_engineer: {
+        titulo: "Ingeniero de Video y Multimedia",
+        contenido: `<p>Crea experiencias multimedia inmersivas. Utiliza herramientas como Remotion y ComfyUI para la generación de video, FFT Audio para procesamiento de sonido y WebAssembly (WASM) para un rendimiento gráfico excepcional en el navegador.</p>`
+      },
+      frontend_engineer: {
+        titulo: "Ingeniero Frontend (Elite)",
+        contenido: `<p>Desarrolla interfaces de usuario de vanguardia con las últimas tecnologías. Experto en React 19, Next.js para aplicaciones web rápidas, Tailwind v4 para estilos modernos y WebGL/Three.js para gráficos 3D interactivos, creando experiencias visuales impactantes.</p>`
+      },
+      compiler_engineer: {
+        titulo: "Ingeniero de Compilación y Builds",
+        contenido: `<p>Optimiza el proceso de compilación y empaquetado de tus aplicaciones. Utiliza herramientas como PyInstaller y Gradle, y el motor Aquis para asegurar builds rápidos, fiables y eficientes, reduciendo los tiempos de despliegue y mejorando la productividad.</p>`
+      },
+      corpus: {
+        titulo: "Sistema CORPUS (ISIS)",
+        contenido: `<p>El agente principal de interacción hombre-máquina diseñado y entrenado por Rony Valverde.</p>
+                    <ul>
+                      <li><strong>Interfaz HMI:</strong> Control físico del entorno operativo (Voz y Automatización de Hardware).</li>
+                      <li><strong>Inferencia Local Aislada:</strong> Capacidad de pensar, auditar y ejecutar rutinas sin depender de la nube.</li>
+                      <li><strong>Persistencia de Estado:</strong> Sistema "Durable Checkpointing", Corpus recuerda contextos de meses de antigüedad.</li>
+                    </ul>`
+      },
+      ai_engine: {
+        titulo: "Piston Quarks AI Engine",
+        contenido: `<p>Desarrollo nivel L5 para soberanía total de datos corporativos.</p>
+                    <ul>
+                      <li>Desacoplamiento de SaaS de terceros (Notion, GPT-4).</li>
+                      <li>Uso de modelos open-source cuantizados: DeepSeek-R1 y Qwen.</li>
+                      <li>Ahorro en OPEX y 0% de fuga de datos sensibles de la empresa.</li>
+                    </ul>`
+      },
+      flashcoms: {
+        titulo: "FlashComs Engine",
+        contenido: `<p>Alternativa a Mapbox/Google Maps creada desde cero.</p>
+                    <ul>
+                      <li>Motor de subasta logística renderizado en tiempo real.</li>
+                      <li>Geometría de mapas sin uso de API Keys de pago.</li>
+                      <li>Tracking lineal simulado a 144 FPS sin crashear WebViews móviles.</li>
+                    </ul>`
+      },
+      telemetria: {
+        titulo: "Agente de Telemetría Industrial",
+        contenido: `<p>Protocolo IoT y WebSockets ultra-resiliente para entornos industriales críticos.</p>
+                    <ul>
+                      <li>Memoria de contingencia SQLite cuando cae el internet en la planta.</li>
+                      <li>Al reconectar, vuelca todos los logs retenidos sin perder un solo milisegundo de información (Reconciliación atómica).</li>
+                    </ul>`
+      },
+      aquis: {
+        titulo: "Aquis: Motor Polimórfico",
+        contenido: `<p>Servidor de compilación asíncrono con un motor de autocuración activa basado en IA. Diagnostica logs en caliente, aplica parches y relanza builds automáticamente, logrando un 85% de reducción en tiempos de empaquetado y 0% de intervención manual ante fallos.</p>`
+      },
+      gguf_inference: {
+        titulo: "Corpus: Inferencia Local GGUF",
+        contenido: `<p>Un puente soberano en Python que se conecta a modelos GGUF (Hermes-3, Llama-3) vía la API local de Ollama. Esto permite costos de inferencia de $0.00 USD, 100% soberanía del dato y latencias menores a 30ms en hardware local, eliminando la dependencia de APIs externas.</p>`
+      },
+      nexus_wan_reverse_eng: {
+        titulo: "NEXUS WAN: Ingeniería Inversa y RAG",
+        contenido: `<p>Arquitectura 'Secure API Gateway Proxy' en Next.js. Orquestador de sockets que gestiona dinámicamente puertos y evade las restricciones de CORS y rate-limiting en plataformas como GitHub/GitLab. Permite la ingeniería inversa y la integración RAG sin exponer tokens ni sufrir bloqueos.</p>`
+      },
+      pqc_banca: {
+        titulo: "Post-Quantum Cryptography (PQC)",
+        contenido: `<p>Securing high-value financial transactions against future decryption threats.</p>
+                    <ul>
+                      <li><strong>NIST FIPS 203 Standards:</strong> Native implementation of ML-KEM/Kyber key encapsulation and ML-DSA digital signatures.</li>
+                      <li><strong>Architectural Isolation:</strong> Fully decoupled domain cryptoservices running locally on Java 17 under Hexagonal Architecture.</li>
+                      <li><strong>Zero Threat:</strong> Immune to 'Harvest Now, Decrypt Later' espionage protocols.</li>
+                    </ul>`
+      },
+      sovereign_ai: {
+        titulo: "Sovereign Local AI Cognition",
+        contenido: `<p>Self-contained cognitive agents executing operations on-premise without cloud dependencies.</p>
+                    <ul>
+                      <li><strong>Model Optimization:</strong> Low-latency local model inference (DeepSeek-R1, Qwen3, Hermes) via Ollama.</li>
+                      <li><strong>Zero OPEX:</strong> Direct integration utilizing local computing resources, dropping external API costs to $0.00.</li>
+                      <li><strong>100% Privacy:</strong> Compliance with GDPR and federal regulations by design. Core business logic never leaves client premises.</li>
+                    </ul>`
+      },
+      telemetry_durable: {
+        titulo: "Critical Telemetry & Durable State",
+        contenido: `<p>Industrial-grade resilience for applications under high-physical stress or unstable network environments.</p>
+                    <ul>
+                      <li><strong>Durable Checkpointing:</strong> Local state persistence (SQLite Write-Ahead Logging & IndexedDB) saving transaction histories instantly.</li>
+                      <li><strong>Time Travel Recovery:</strong> Automatically recovers exact UI states and agent history upon connection restoration.</li>
+                      <li><strong>Atomic Syncing:</strong> Flushes localized telemetry packets without a single byte of regression.</li>
+                    </ul>`
+      },
+      app_kiss: {
+        titulo: "App Kiss Compiler Suite",
+        contenido: `<p>Self-healing builder compiler targeting native Android package assemblies.</p>
+                    <ul>
+                      <li><strong>Autonomic Debugging:</strong> Automatically scans and parses logs from Android Gradle, Capacitor, and Node tools.</li>
+                      <li><strong>Hotfixing:</strong> AI-driven agents inject code adjustments directly into sources to resolve build blocker dependencies.</li>
+                      <li><strong>Efficiency:</strong> Cuts down manual debugging times by over 85%.</li>
+                    </ul>`
+      },
+      repoguide_rag: {
+        titulo: "RepoGuide RAG Security Proxy",
+        contenido: `<p>Secure gateway auditing architecture developed on Next.js.</p>
+                    <ul>
+                      <li><strong>Token Protection:</strong> Encapsulates and acts as a gateway proxy for repository interactions without exposing API keys.</li>
+                      <li><strong>Private Audits:</strong> Employs local vector databases (FAISS) and SQLite to query million-line codebases locally.</li>
+                      <li><strong>CORS Avoidance:</strong> Built-in proxy routing bypassing API restriction limits.</li>
+                    </ul>`
+      },
+      flashcoms_logistics: {
+        titulo: "FlashComs Real-Time Logistics Nodes",
+        contenido: `<p>Decoupled supply chain optimization system successfully deployed in South American nodes.</p>
+                    <ul>
+                      <li><strong>Open-Source Maps:</strong> Complete replacement of expensive proprietary map licensing with Leaflet.js.</li>
+                      <li><strong>144 FPS Performance:</strong> Ultra-fluid delivery vehicle tracking across maps using lightweight WebSockets.</li>
+                      <li><strong>Measurable Impact:</strong> Saved over S/ 35,400 annually in API fees.</li>
+                    </ul>`
+      }
+    };
+
+    // --- LÓGICA DE MODALES MÁGICOS ---
+    const overlay = document.getElementById('global-modal');
+    const modalBox = document.getElementById('modal-box');
+    const titleEl = document.getElementById('modal-title');
+    const bodyEl = document.getElementById('modal-body');
+
+    function openModal(key) {
+      if(!modales[key]) return;
+      
+      // Llenar contenido
+      titleEl.innerHTML = modales[key].titulo;
+      bodyEl.innerHTML = modales[key].contenido;
+      
+      // Mostrar capa
+      overlay.classList.add('active');
+      
+      // Animar mágicamente los elementos (Listas y párrafos)
+      gsap.fromTo("#modal-body li, #modal-body p", 
+        { y: 30, opacity: 0, x: -10 }, 
+        { y: 0, opacity: 1, x: 0, duration: 0.6, stagger: 0.1, delay: 0.2, ease: "power3.out" }
+      );
+    }
+
+    function closeModal() {
+      // Revertir animación de los elementos al cerrar
+      gsap.to("#modal-body li, #modal-body p", { 
+        y: 0, opacity: 0, x: 0, duration: 0.3, stagger: -0.05, ease: "power2.in",
+        onComplete: () => {
+          overlay.classList.remove('active');
+          // Limpiar contenido después de cerrar para asegurar estado
+          titleEl.innerHTML = '';
+          bodyEl.innerHTML = '';
+        }
+      });
+    }
+
+    // Cerrar al hacer clic fuera
+    function closeOnOverlay(e) {
+      if (e.target === overlay) {
+        closeModal();
+      }
+    }
+
+    // --- THREE.JS BACKGROUND ---
+    const canvas = document.getElementById('webgl-canvas');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Partículas (Nodos de color Azul Marino Brillante)
+    const particlesGeometry = new THREE.BufferGeometry();
+    const particlesCount = 2500;
+    const posArray = new Float32Array(particlesCount * 3);
+    for(let i = 0; i < particlesCount * 3; i++) {
+      posArray[i] = (Math.random() - 0.5) * 15; 
+    }
+    particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    
+    const particlesMaterial = new THREE.PointsMaterial({
+      size: 0.02,
+      color: 0x0088ff, // Azul Marino
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending
+    });
+    
+    const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+    scene.add(particlesMesh);
+    camera.position.z = 4;
+
+    let mouseX = 0, mouseY = 0;
+    document.addEventListener('mousemove', (e) => {
+      mouseX = (e.clientX / window.innerWidth) - 0.5;
+      mouseY = (e.clientY / window.innerHeight) - 0.5;
+    });
+
+    function render3D() {
+      requestAnimationFrame(render3D);
+      particlesMesh.rotation.y += 0.0008;
+      particlesMesh.rotation.x += 0.0003;
+      
+      camera.position.x += (mouseX * 0.8 - camera.position.x) * 0.05;
+      camera.position.y += (-mouseY * 0.8 - camera.position.y) * 0.05;
+      camera.lookAt(scene.position);
+      
+      renderer.render(scene, camera);
+    }
+    render3D();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- GSAP TIMELINE & SCROLLTRIGGER ---
+    gsap.registerPlugin(ScrollTrigger);
+    
+    const slides = document.querySelectorAll('.slide');
+    const progressText = document.getElementById('progress-text');
+    const totalSlides = slides.length;
+
+    // Estados iniciales
+    gsap.set("#slide-2", { autoAlpha: 0, yPercent: -100, scale: 0.8 }); // Entra de arriba
+    gsap.set("#slide-3", { autoAlpha: 0, xPercent: 100 }); // Entra de la derecha
+    gsap.set("#slide-4", { autoAlpha: 0, yPercent: 100, rotationX: 20 }); // Entra de abajo en 3D
+    gsap.set("#slide-5", { autoAlpha: 0, xPercent: -100 }); // Entra de la izquierda
+    gsap.set("#slide-6", { autoAlpha: 0, scale: 2 }); // Entra haciendo Zoom Out
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: ".scroll-track",
+        start: "top top",
+        end: "bottom bottom",
+        scrub: 1.5,
+        onUpdate: (self) => {
+          let current = Math.floor(self.progress * totalSlides) + 1;
+          if (current > totalSlides) current = totalSlides;
+          progressText.innerText = `0${current} / 0${totalSlides}`;
+          
+          // Habilitar clicks solo en el slide visible (pointer-events)
+          slides.forEach((s, idx) => {
+            if(idx + 1 === current) {
+              s.classList.add('active-slide');
+            } else {
+              s.classList.remove('active-slide');
+            }
+          });
+        }
+      }
+    });
+
+    // --- SECUENCIA CORE CINEMATOGRÁFICA ---
+
+    // Transition a Slide 2 (Explicación Tech)
+    tl.to("#slide-1", { autoAlpha: 0, scale: 1.2, duration: 1 })
+      .to(particlesMesh.rotation, { z: "+=1", duration: 1 }, "<") 
+      .to(particlesMaterial.color, { r: 0, g: 1, b: 0.4, duration: 1 }, "<") // Muta a verde Matrix
+      .to("#slide-2", { autoAlpha: 1, yPercent: 0, scale: 1, duration: 1 }, "<0.2");
+
+    // Transition a Slide 3 (Ramas)
+    tl.to("#slide-2", { autoAlpha: 0, xPercent: -50, duration: 1 })
+      .to(particlesMesh.position, { z: 2, duration: 1 }, "<") // Zoom de partículas
+      .to(particlesMaterial.color, { r: 0, g: 0.5, b: 1, duration: 1 }, "<") // Vuelve a Azul
+      .to("#slide-3", { autoAlpha: 1, xPercent: 0, duration: 1 }, "<0.2");
+
+    // Transition a Slide 4 (Agentes)
+    tl.to("#slide-3", { autoAlpha: 0, yPercent: -50, duration: 1 })
+      .to(particlesMesh.rotation, { x: "+=2", duration: 1 }, "<")
+      .to(particlesMaterial.color, { r: 1, g: 0, b: 0.3, duration: 1 }, "<") // Peligro/Rojo (Por Corpus)
+      .to("#slide-4", { autoAlpha: 1, yPercent: 0, rotationX: 0, duration: 1 }, "<0.2");
+
+    // Transition a Slide 5 (L5)
+    tl.to("#slide-4", { autoAlpha: 0, xPercent: 50, duration: 1 })
+      .to(particlesMesh.position, { z: 0, duration: 1 }, "<")
+      .to(particlesMaterial.color, { r: 0, g: 0.8, b: 1, duration: 1 }, "<") // Azul profundo de nuevo
+      .to("#slide-5", { autoAlpha: 1, xPercent: 0, duration: 1 }, "<0.2");
+
+    // Transition a Slide 6 (L4)
+    tl.to("#slide-5", { autoAlpha: 0, scale: 0.5, duration: 1 })
+      .to(particlesMesh.rotation, { y: "+=3", duration: 1 }, "<")
+      .to("#slide-6", { autoAlpha: 1, scale: 1, duration: 1 }, "<0.2");
+
+  </script>
+
+
+<script data-od-snapshot-bridge="">(function(){
+  function copyComputedStyle(source, target){
+    if (!source || !target || source.nodeType !== 1 || target.nodeType !== 1) return;
+    var computed = window.getComputedStyle(source);
+    var style = target.getAttribute('style') || '';
+    for (var i = 0; i < computed.length; i++){
+      var prop = computed[i];
+      style += prop + ':' + computed.getPropertyValue(prop) + ';';
+    }
+    target.setAttribute('style', style);
+  }
+  function syncElementState(source, target){
+    var tag = source.tagName ? source.tagName.toLowerCase() : '';
+    if (tag === 'img' && source.currentSrc) target.setAttribute('src', source.currentSrc);
+    if (tag === 'input' || tag === 'textarea') target.setAttribute('value', source.value || '');
+    if (tag === 'canvas') {
+      try {
+        var img = document.createElement('img');
+        img.setAttribute('src', source.toDataURL('image/png'));
+        img.setAttribute('style', target.getAttribute('style') || '');
+        target.parentNode && target.parentNode.replaceChild(img, target);
+      } catch (_) {}
+    }
+  }
+  function inlineSnapshotStyles(originalRoot, cloneRoot){
+    copyComputedStyle(originalRoot, cloneRoot);
+    syncElementState(originalRoot, cloneRoot);
+    var originals = originalRoot.querySelectorAll('*');
+    var clones = cloneRoot.querySelectorAll('*');
+    var count = Math.min(originals.length, clones.length);
+    for (var i = 0; i < count; i++){
+      copyComputedStyle(originals[i], clones[i]);
+      syncElementState(originals[i], clones[i]);
+    }
+    var scripts = cloneRoot.querySelectorAll('script');
+    for (var s = scripts.length - 1; s >= 0; s--) scripts[s].remove();
+  }
+  function waitForImages(){
+    var imgs = Array.prototype.slice.call(document.images || []);
+    return Promise.all(imgs.map(function(img){
+      if (img.complete) return Promise.resolve();
+      return new Promise(function(resolve){
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+    }));
+  }
+  function renderSnapshot(id){
+    var w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    var h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    var dpr = window.devicePixelRatio || 1;
+    var docW = Math.max(w, document.documentElement.scrollWidth || 0, document.body ? document.body.scrollWidth : 0);
+    var docH = Math.max(h, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+    var clone = document.documentElement.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    inlineSnapshotStyles(document.documentElement, clone);
+    var serializer = new XMLSerializer();
+    var html = serializer.serializeToString(clone);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<foreignObject x="' + (-window.scrollX || 0) + '" y="' + (-window.scrollY || 0) + '" width="' + docW + '" height="' + docH + '">' +
+      html +
+      '</foreignObject></svg>';
+    var img = new Image();
+    img.onload = function(){
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(w * dpr));
+        canvas.height = Math.max(1, Math.floor(h * dpr));
+        var ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no 2d context');
+        ctx.scale(dpr, dpr);
+        ctx.drawImage(img, 0, 0, w, h);
+        window.parent.postMessage({ type: 'od:snapshot:result', id: id, dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height }, '*');
+      } catch (err) {
+        window.parent.postMessage({ type: 'od:snapshot:result', id: id, error: String(err && err.message || err) }, '*');
+      }
+    };
+    img.onerror = function(){
+      window.parent.postMessage({ type: 'od:snapshot:result', id: id, error: 'snapshot image failed' }, '*');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  window.addEventListener('message', function(ev){
+    var data = ev && ev.data;
+    if (!data || data.type !== 'od:snapshot' || !data.id) return;
+    waitForImages().then(function(){ renderSnapshot(String(data.id)); });
+  });
+})();</script><script data-od-srcdoc-transport-activation="">(function(){
+  window.addEventListener('message', function(ev){
+    var data = ev && ev.data;
+    if (!data || data.type !== 'od:srcdoc-transport-activate' || typeof data.html !== 'string') return;
+    document.open();
+    document.write(data.html);
+    document.close();
+  });
+})();</script></body></html>
