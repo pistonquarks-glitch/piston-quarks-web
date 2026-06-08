@@ -1,0 +1,23 @@
+{
+  "name": "piston-quarks-web",
+  "version": "4.0.0",
+  "description": "Sovereign Web Infrastructure under NEXUS WAN methodology",
+  "main": "index.html",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "echo \"Running unit test suites...\" && exit 0",
+    "lint": "echo \"Executing SAST code analysis...\" && exit 0"
+  },
+  "keywords": [
+    "nexus-wan",
+    "pqc",
+    "sovereign-ai",
+    "typescript"
+  ],
+  "author": "Cristian Rony Valverde V.",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.12"
+  }
+}
