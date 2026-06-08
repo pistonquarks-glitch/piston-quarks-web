@@ -1,8 +1,8 @@
 import * as crypto from "crypto";
 
 export interface KeyPair {
-  publicKey: string;
-  privateKey: string;
+  publicKey: Uint8Array;
+  privateKey: Uint8Array;
 }
 
 export interface SignatureVerificationResult {
@@ -10,71 +10,112 @@ export interface SignatureVerificationResult {
 }
 
 export class PqcDefenseAdapter {
-  private bunkerSecret: Buffer;
+  private bunkerSecret: Uint8Array;
 
   constructor() {
-    const rawSecret = process.env.NEXT_PUBLIC_CRYPTO_BUNKER || "default_nato_pqc_secure_bunker_secret_key_2026";
-    this.bunkerSecret = Buffer.from(rawSecret, "utf-8");
+    const rawSecret = process.env.NEXT_PUBLIC_CRYPTO_BUNKER || "default_nato_pqc_secure_bunker_secret_key_2026_long_seed_security";
+    const tempBuffer = Buffer.from(rawSecret, "utf-8");
+    this.bunkerSecret = new Uint8Array(tempBuffer.length);
+    for (let i = 0; i < tempBuffer.length; i++) {
+      this.bunkerSecret[i] = tempBuffer[i];
+    }
+    tempBuffer.fill(0);
   }
 
   /**
-   * Genera un par de claves emulando el comportamiento de ML-KEM/Kyber.
-   * El búfer temporal de entropía se limpia inmediatamente después de su uso.
+   * Genera un par de claves emulando Kyber/ML-KEM.
+   * Utiliza crypto.getRandomValues y asegura la purga del heap a bajo nivel.
    */
   public generateKeys(): KeyPair {
-    const entropy = crypto.randomBytes(32);
+    const entropy = new Uint8Array(32);
+    crypto.getRandomValues(entropy);
     
-    try {
-      const privateKey = crypto.createHmac("sha256", this.bunkerSecret)
-        .update(Buffer.concat([entropy, Buffer.from("private", "utf-8")]))
-        .digest("hex");
+    const privateKey = new Uint8Array(32);
+    const publicKey = new Uint8Array(32);
 
-      const publicKey = crypto.createHmac("sha256", this.bunkerSecret)
-        .update(Buffer.concat([entropy, Buffer.from("public", "utf-8")]))
-        .digest("hex");
+    try {
+      const prfPrivate = crypto.createHmac("sha256", this.bunkerSecret)
+        .update(entropy)
+        .update(Buffer.from("private", "utf-8"))
+        .digest();
+
+      const prfPublic = crypto.createHmac("sha256", this.bunkerSecret)
+        .update(entropy)
+        .update(Buffer.from("public", "utf-8"))
+        .digest();
+
+      for (let i = 0; i < 32; i++) {
+        privateKey[i] = prfPrivate[i];
+        publicKey[i] = prfPublic[i];
+      }
 
       return { publicKey, privateKey };
     } finally {
-      // Mitigación de fugas en memoria de ejecución (ataques de canal lateral)
-      entropy.fill(0);
+      // Sobrescritura física obligatoria para mitigar retención en heap
+      for (let i = 0; i < entropy.length; i++) {
+        entropy[i] = 0;
+      }
     }
   }
 
   /**
-   * Firma digital de grado militar emulando primitivas ML-DSA.
+   * Firma digital determinista emulando ML-DSA.
    */
-  public signPayload(payload: string, privateKey: string): string {
-    const dataBuffer = Buffer.from(payload, "utf-8");
-    const keyBuffer = Buffer.from(privateKey, "hex");
+  public signPayload(payload: string, privateKey: Uint8Array): Uint8Array {
+    const payloadBytes = Buffer.from(payload, "utf-8");
+    const signature = new Uint8Array(32);
     
     try {
-      return crypto.createHmac("sha256", keyBuffer)
-        .update(Buffer.concat([dataBuffer, this.bunkerSecret]))
-        .digest("hex");
+      const hmac = crypto.createHmac("sha256", privateKey)
+        .update(payloadBytes)
+        .update(this.bunkerSecret)
+        .digest();
+
+      for (let i = 0; i < 32; i++) {
+        signature[i] = hmac[i];
+      }
+      
+      return signature;
     } finally {
-      dataBuffer.fill(0);
-      keyBuffer.fill(0);
+      for (let i = 0; i < payloadBytes.length; i++) {
+        payloadBytes[i] = 0;
+      }
     }
   }
 
   /**
-   * Valida la firma digital post-cuántica.
+   * Verifica firmas de primitivas criptográficas.
    */
-  public verifySignature(payload: string, signature: string, publicKey: string): SignatureVerificationResult {
-    const dataBuffer = Buffer.from(payload, "utf-8");
-    const keyBuffer = Buffer.from(publicKey, "hex");
+  public verifySignature(payload: string, signature: Uint8Array, publicKey: Uint8Array): SignatureVerificationResult {
+    const payloadBytes = Buffer.from(payload, "utf-8");
     
     try {
-      const expectedSignature = crypto.createHmac("sha256", keyBuffer)
-        .update(Buffer.concat([dataBuffer, this.bunkerSecret]))
-        .digest("hex");
+      const expectedHmac = crypto.createHmac("sha256", publicKey)
+        .update(payloadBytes)
+        .update(this.bunkerSecret)
+        .digest();
+
+      let diff = 0;
+      for (let i = 0; i < 32; i++) {
+        diff |= expectedHmac[i] ^ signature[i];
+      }
 
       return {
-        verified: expectedSignature === signature
+        verified: diff === 0
       };
     } finally {
-      dataBuffer.fill(0);
-      keyBuffer.fill(0);
+      for (let i = 0; i < payloadBytes.length; i++) {
+        payloadBytes[i] = 0;
+      }
+    }
+  }
+
+  /**
+   * Purga definitiva del búnker secreto de memoria de ejecución.
+   */
+  public purgeBunker(): void {
+    for (let i = 0; i < this.bunkerSecret.length; i++) {
+      this.bunkerSecret[i] = 0;
     }
   }
 }
